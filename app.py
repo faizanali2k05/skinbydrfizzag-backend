@@ -24,8 +24,12 @@ def chat():
         return jsonify({"error": "No message provided"}), 400
 
     try:
+        # Check if API key is placeholder
+        if os.environ.get("OPENAI_API_KEY", "YOUR_OPENAI_API_KEY_HERE") == "YOUR_OPENAI_API_KEY_HERE":
+            return jsonify({"error": "OpenAI API Key is not configured on the server."}), 500
+
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are a helpful AI skin care consultant for 'Skin By Dr. Fizza G' clinic. Answer questions about skin care, procedures, and clinic services politely."},
                 {"role": "user", "content": user_message}
@@ -35,7 +39,10 @@ def chat():
         return jsonify({"response": ai_message})
     except Exception as e:
         print(f"Error: {e}")
-        return jsonify({"error": str(e)}), 500
+        error_msg = str(e)
+        if "insufficient_quota" in error_msg:
+            return jsonify({"error": "OpenAI API quota exceeded. Please check billing."}), 500
+        return jsonify({"error": f"AI Error: {error_msg}"}), 500
 
 if __name__ == '__main__':
     # For local testing
