@@ -1,3 +1,4 @@
+# Updated c:\Users\Faizan\StudioProjects\Skin By Dr. Fizza G\ai_backend\app.py
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from openai import OpenAI
@@ -5,11 +6,6 @@ import os
 
 app = Flask(__name__)
 CORS(app)
-
-# Initialize OpenAI Client
-client = OpenAI(
-    api_key=os.environ.get("OPENAI_API_KEY", "YOUR_OPENAI_API_KEY_HERE")
-)
 
 @app.route('/')
 def home():
@@ -23,13 +19,19 @@ def chat():
     if not user_message:
         return jsonify({"error": "No message provided"}), 400
 
+    # Get API Key from environment
+    api_key = os.environ.get("OPENAI_API_KEY")
+    
+    # Check if key exists and isn't the placeholder
+    if not api_key or "YOUR_OPENAI_API_KEY_HERE" in api_key:
+        return jsonify({"error": "OpenAI API Key is missing or invalid in Render Environment Variables."}), 500
+
     try:
-        # Check if API key is placeholder
-        if os.environ.get("OPENAI_API_KEY", "YOUR_OPENAI_API_KEY_HERE") == "YOUR_OPENAI_API_KEY_HERE":
-            return jsonify({"error": "OpenAI API Key is not configured on the server."}), 500
+        # Initialize client inside the route to ensure fresh env vars
+        client = OpenAI(api_key=api_key)
 
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-3.5-turbo", # Switched to gpt-3.5-turbo for maximum compatibility
             messages=[
                 {"role": "system", "content": "You are a helpful AI skin care consultant for 'Skin By Dr. Fizza G' clinic. Answer questions about skin care, procedures, and clinic services politely."},
                 {"role": "user", "content": user_message}
@@ -45,5 +47,4 @@ def chat():
         return jsonify({"error": f"AI Error: {error_msg}"}), 500
 
 if __name__ == '__main__':
-    # For local testing
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
