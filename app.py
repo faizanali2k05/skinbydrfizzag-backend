@@ -96,7 +96,8 @@ def process_incoming_wa_message(phone, text, wa_id):
                 "user_id": user_id,
                 "admin_id": ADMIN_ID,
                 "last_message": text,
-                "unread_count": 1
+                "unread_count": 1,
+                "platform": "whatsapp",
             }
             new_conv = supabase.table('conversations').insert(conv_data).execute()
             conversation_id = new_conv.data[0]['id']
@@ -183,9 +184,12 @@ def chat():
         response = openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a helpful AI skin care consultant for 'Skin By Dr. Fizza G' clinic."},
-                {"role": "user", "content": user_message}
-            ]
+                {
+                    "role": "system",
+                    "content": "You are a helpful AI skin care consultant for 'Skin By Dr. Fizza G' clinic.",
+                },
+                {"role": "user", "content": user_message},
+            ],
         )
         ai_message = response.choices[0].message.content
         return jsonify({"response": ai_message})
