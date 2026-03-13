@@ -3,6 +3,7 @@ from flask_cors import CORS
 from openai import OpenAI
 import os
 import requests
+import uuid
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
@@ -68,32 +69,22 @@ def process_incoming_wa_message(phone, text, wa_id):
     """Business logic for incoming WhatsApp messages"""
     try:
         # 1. Find or create user profile
-        # First, search by phone
         user_res = supabase.table('profiles').select('*').eq('phone', phone).execute()
         
         if not user_res.data:
-            # Create a new profile if not exists
-            # Note: We don't have an auth.user id yet, so we might need a different strategy 
-            # or use a placeholder UUID if we allow non-auth profiles.
-            # For now, let's assume we need to link them later or create a simple record.
-            # In a real app, you might want to auto-register them or keep them as 'whatsapp_user'
+            # Create a new profile for the WhatsApp user
+            new_user_id = str(uuid.uuid4())
             new_user = {
-                "id": str(requests.utils.uuid.uuid4()), # Placeholder UUID or handle differently
+                "id": new_user_id,
                 "full_name": f"WA User {phone}",
                 "phone": phone,
-                "role": "user"
+                "role": "user",
+                "status": "active"
             }
-            # Note: Profiles table has a foreign key to auth.users. 
-            # This is a constraint! If a user is only on WhatsApp, they might not be in auth.users.
-            # We should probably relax this constraint or handle it.
-            # Assuming for this demo we have a workaround or the user is already registered.
-            pass 
-        
-        user_id = user_res.data[0]['id'] if user_res.data else None
-        
-        if not user_id:
-            print(f"User with phone {phone} not found in profiles. Skipping or handle auto-creation.")
-            return
+            supabase.table('profiles').insert(new_user).execute()
+            user_id = new_user_id
+        else:
+            user_id = user_res.data[0]['id']
 
         # 2. Find or create conversation
         conv_res = supabase.table('conversations').select('*').eq('user_id', user_id).execute()
