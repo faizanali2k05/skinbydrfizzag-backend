@@ -91,7 +91,10 @@ def process_incoming_wa_message(phone, text, wa_id):
         
         if not conv_res.data:
             # Create new conversation with admin
-            # Ensure ADMIN_ID is set in env
+            if not ADMIN_ID:
+                print("Error: ADMIN_ID not set in environment variables.")
+                return
+
             conv_data = {
                 "user_id": user_id,
                 "admin_id": ADMIN_ID,
@@ -169,13 +172,13 @@ def send_message():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# --- AI CONSULTANT ROUTE (Existing) ---
+# --- AI CONSULTANT ROUTE ---
 
 @app.route('/chat', methods=['POST'])
 def chat():
-    # ... (Keep existing chat logic or integrate with Supabase)
     data = request.json
     user_message = data.get('message', '')
+    user_id = data.get('user_id') # Optional: for server-side persistence
 
     if not openai_client or not user_message:
         return jsonify({"error": "OpenAI not configured or no message"}), 400
@@ -186,15 +189,23 @@ def chat():
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a helpful AI skin care consultant for 'Skin By Dr. Fizza G' clinic.",
+                    "content": "You are a helpful AI skin care consultant for 'Skin By Dr. Fizza G' clinic. Keep responses helpful and concise.",
                 },
                 {"role": "user", "content": user_message},
             ],
         )
         ai_message = response.choices[0].message.content
+        
+        # Note: If user_id is provided, we could store it here using SUPABASE_KEY (Service Role)
+        # However, Flutter is currently handling storage. 
+        # For WhatsApp AI, we would definitely store it here.
+        
         return jsonify({"response": ai_message})
     except Exception as e:
+        print(f"AI Chat Error: {e}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    # Use PORT from environment (required for Render)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
