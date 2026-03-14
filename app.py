@@ -86,8 +86,8 @@ def process_incoming_wa_message(phone, text, wa_id):
         else:
             user_id = user_res.data[0]['id']
 
-        # 2. Find or create conversation
-        conv_res = supabase.table('conversations').select('*').eq('user_id', user_id).execute()
+        # 2. Find or create conversation (filter by platform to avoid mixing with in-app chats)
+        conv_res = supabase.table('conversations').select('*').eq('user_id', user_id).eq('platform', 'whatsapp').execute()
         
         if not conv_res.data:
             # Create new conversation with admin
@@ -106,11 +106,19 @@ def process_incoming_wa_message(phone, text, wa_id):
             conversation_id = new_conv.data[0]['id']
         else:
             conversation_id = conv_res.data[0]['id']
+            # Keep unread count and last_message up to date
+            current_unread = conv_res.data[0].get('unread_count', 0) or 0
+            supabase.table('conversations').update({
+                'last_message': text,
+                'unread_count': current_unread + 1,
+            }).eq('id', conversation_id).execute()
 
-        # 3. Store message
+        # 3. Store message (sender_name required by Flutter ChatMessageModel)
+        sender_name = user_res.data[0].get('full_name', f'WA User {phone}') if user_res.data else f'WA User {phone}'
         msg_data = {
             "conversation_id": conversation_id,
             "sender_id": user_id,
+            "sender_name": sender_name,
             "sender_role": "user",
             "text": text,
             "platform": "whatsapp",
@@ -158,6 +166,7 @@ def send_message():
             msg_data = {
                 "conversation_id": conversation_id,
                 "sender_id": ADMIN_ID,
+                "sender_name": "Dr. Fizza",
                 "sender_role": "admin",
                 "text": message_text,
                 "platform": "whatsapp",
