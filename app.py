@@ -46,6 +46,7 @@ def verify_webhook():
 def handle_webhook():
     """Handle incoming WhatsApp messages"""
     data = request.json
+    print(f"Incoming Webhook Data: {data}")
     
     # Check if it's a message event
     if data.get('object') == 'whatsapp_business_account':
@@ -55,9 +56,11 @@ def handle_webhook():
                 if 'messages' in value:
                     for message in value['messages']:
                         sender_phone = message.get('from')
+                        # Get text body or default to empty string
                         message_body = message.get('text', {}).get('body', '')
                         wa_message_id = message.get('id')
                         
+                        print(f"Processing message from {sender_phone}: {message_body}")
                         if message_body:
                             process_incoming_wa_message(sender_phone, message_body, wa_message_id)
         
@@ -68,10 +71,15 @@ def handle_webhook():
 def process_incoming_wa_message(phone, text, wa_id):
     """Business logic for incoming WhatsApp messages"""
     try:
+        if not supabase:
+            print("Error: Supabase client not initialized.")
+            return
+
         # 1. Find or create user profile
         user_res = supabase.table('profiles').select('*').eq('phone', phone).execute()
         
         if not user_res.data:
+            print(f"Creating new profile for WA user: {phone}")
             # Create a new profile for the WhatsApp user
             new_user_id = str(uuid.uuid4())
             new_user = {
@@ -86,13 +94,13 @@ def process_incoming_wa_message(phone, text, wa_id):
         else:
             user_id = user_res.data[0]['id']
 
-        # 2. Find or create conversation (filter by platform to avoid mixing with in-app chats)
+        # 2. Find or create conversation
         conv_res = supabase.table('conversations').select('*').eq('user_id', user_id).eq('platform', 'whatsapp').execute()
         
         if not conv_res.data:
-            # Create new conversation with admin
+            print(f"Creating new WA conversation for user_id: {user_id}")
             if not ADMIN_ID:
-                print("Error: ADMIN_ID not set in environment variables.")
+                print("CRITICAL ERROR: ADMIN_ID not set in environment variables.")
                 return
 
             conv_data = {
@@ -106,14 +114,16 @@ def process_incoming_wa_message(phone, text, wa_id):
             conversation_id = new_conv.data[0]['id']
         else:
             conversation_id = conv_res.data[0]['id']
-            # Keep unread count and last_message up to date
+            # Update unread count and last_message
             current_unread = conv_res.data[0].get('unread_count', 0) or 0
             supabase.table('conversations').update({
                 'last_message': text,
                 'unread_count': current_unread + 1,
+                'updated_at': 'now()'
             }).eq('id', conversation_id).execute()
 
-        # 3. Store message (sender_name required by Flutter ChatMessageModel)
+        # 3. Store message
+        print(f"Storing WA message in DB. Conversation: {conversation_id}")
         sender_name = user_res.data[0].get('full_name', f'WA User {phone}') if user_res.data else f'WA User {phone}'
         msg_data = {
             "conversation_id": conversation_id,
@@ -125,6 +135,7 @@ def process_incoming_wa_message(phone, text, wa_id):
             "whatsapp_message_id": wa_id
         }
         supabase.table('messages').insert(msg_data).execute()
+        print("Message stored successfully.")
         
     except Exception as e:
         print(f"Error processing WA message: {e}")
@@ -135,6 +146,8 @@ def process_incoming_wa_message(phone, text, wa_id):
 def send_message():
     """Endpoint for Admin to send a message to WhatsApp"""
     data = request.json
+    print(f"Admin Send-Message Request: {data}")
+    
     conversation_id = data.get('conversation_id')
     message_text = data.get('message')
     recipient_phone = data.get('phone')
@@ -143,6 +156,10 @@ def send_message():
         return jsonify({"error": "Missing parameters"}), 400
 
     try:
+        if not WHATSAPP_TOKEN or not WHATSAPP_PHONE_NUMBER_ID:
+            print("Error: WhatsApp credentials missing in backend .env")
+            return jsonify({"error": "Backend configuration incomplete"}), 500
+
         # 1. Send via WhatsApp API
         url = f"https://graph.facebook.com/v19.0/{WHATSAPP_PHONE_NUMBER_ID}/messages"
         headers = {
@@ -156,13 +173,19 @@ def send_message():
             "text": {"body": message_text}
         }
         
+        print(f"Sending to Meta API: {url}")
         response = requests.post(url, headers=headers, json=payload)
         res_data = response.json()
+        print(f"Meta API Response: {res_data}")
         
         if response.status_code == 200:
             wa_id = res_data.get('messages', [{}])[0].get('id')
             
             # 2. Store in Supabase
+            if not ADMIN_ID:
+                print("Error: ADMIN_ID missing. Cannot store message sender.")
+                return jsonify({"error": "ADMIN_ID missing on backend"}), 500
+
             msg_data = {
                 "conversation_id": conversation_id,
                 "sender_id": ADMIN_ID,
@@ -173,12 +196,15 @@ def send_message():
                 "whatsapp_message_id": wa_id
             }
             supabase.table('messages').insert(msg_data).execute()
+            print("Admin reply stored in DB.")
             
             return jsonify({"status": "success", "wa_id": wa_id})
         else:
+            print(f"Meta API Error: {res_data}")
             return jsonify({"error": "WhatsApp API error", "details": res_data}), response.status_code
             
     except Exception as e:
+        print(f"Backend send_message exception: {e}")
         return jsonify({"error": str(e)}), 500
 
 # --- AI CONSULTANT ROUTE ---
